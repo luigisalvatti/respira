@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no,maximum-scale=1">
+<title>Respira</title>
+<meta name="theme-color" content="#0a0a14">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Respira">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+:root {
+  --bg: #0a0a14;
+  --bg-elev: #14141f;
+  --bg-elev-2: #1d1d2c;
+  --text: rgba(255,255,255,0.92);
+  --text-dim: rgba(255,255,255,0.55);
+  --accent: #7e9ce8;
+  --accent-2: #b388ff;
+}
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+
+/* HOME */
+#home {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: calc(env(safe-area-inset-top) + 28px) 22px calc(env(safe-area-inset-bottom) + 24px);
+  overflow-y: auto;
+}
+#home h1 {
+  font-size: 30px;
+  font-weight: 200;
+  letter-spacing: 0.32em;
+  text-align: center;
+  margin-bottom: 4px;
+}
+#home .tagline {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-bottom: 32px;
+  letter-spacing: 0.08em;
+}
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  padding-left: 4px;
+}
+.patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.pattern {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  width: 100%;
+  transition: background 0.15s, transform 0.1s;
+}
+.pattern:active { background: var(--bg-elev-2); transform: scale(0.985); }
+.pattern .name { font-size: 15px; font-weight: 500; margin-bottom: 3px; }
+.pattern .desc { font-size: 12px; color: var(--text-dim); }
+.pattern .pace {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+.row {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.row .label { font-size: 14px; }
+.options { display: flex; gap: 4px; }
+.option {
+  padding: 6px 11px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  transition: all 0.15s;
+}
+.option.active { background: var(--accent); color: #fff; }
+
+/* SESSION */
+#session {
+  height: 100%;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top) + 18px) 22px calc(env(safe-area-inset-bottom) + 24px);
+  position: relative;
+}
+#session.active { display: flex; }
+.session-top {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 2;
+}
+.session-top .pattern-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.18em;
+}
+.session-top .timer {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+.breathing-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+}
+.circle-wrap {
+  position: relative;
+  width: 280px;
+  height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.circle-outer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.circle {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%,
+    rgba(201,179,255,0.85),
+    rgba(126,156,232,0.5) 55%,
+    rgba(126,156,232,0.08) 100%);
+  transform: scale(0.42);
+  transition: transform 4s cubic-bezier(0.45, 0, 0.55, 1);
+  box-shadow: 0 0 80px rgba(126,156,232,0.25);
+}
+.circle-content {
+  position: relative;
+  text-align: center;
+  z-index: 1;
+  pointer-events: none;
+}
+.instruction {
+  font-size: 26px;
+  font-weight: 300;
+  letter-spacing: 0.14em;
+  margin-bottom: 8px;
+}
+.counter {
+  font-size: 44px;
+  font-weight: 200;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  min-height: 52px;
+}
+.tap-hint {
+  position: absolute;
+  bottom: calc(50% - 170px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  letter-spacing: 0.08em;
+  animation: pulse 2.2s ease-in-out infinite;
+  display: none;
+}
+.tap-hint.visible { display: block; }
+@keyframes pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.95; }
+}
+.session-bottom {
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.round-info {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.12em;
+  min-height: 14px;
+}
+.stop {
+  padding: 11px 30px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.07);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  transition: background 0.15s;
+}
+.stop:active { background: rgba(255,255,255,0.16); }
+
+/* CUSTOM MODAL */
+#custom-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: none;
+  align-items: flex-end;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+}
+#custom-modal.visible { display: flex; }
+.modal-content {
+  background: #1a1a26;
+  width: 100%;
+  border-radius: 22px 22px 0 0;
+  padding: 22px 22px calc(env(safe-area-inset-bottom) + 22px);
+}
+.modal-content h2 {
+  font-size: 17px;
+  font-weight: 500;
+  margin-bottom: 14px;
+  letter-spacing: 0.04em;
+}
+.custom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 14px;
+}
+.custom-row:last-of-type { border-bottom: none; }
+.stepper { display: flex; align-items: center; gap: 10px; }
+.stepper button {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.stepper button:active { background: rgba(255,255,255,0.16); }
+.stepper .value {
+  width: 26px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+.modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+.modal-actions button {
+  flex: 1;
+  padding: 13px;
+  border-radius: 12px;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.btn-cancel { background: rgba(255,255,255,0.06); }
+.btn-confirm { background: var(--accent); color: #fff; }
+
+/* END SCREEN */
+.session-end {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  padding: 24px;
+  text-align: center;
+}
+.session-end.visible { display: flex; }
+.session-end h2 {
+  font-size: 22px;
+  font-weight: 200;
+  letter-spacing: 0.18em;
+  margin-bottom: 10px;
+}
+.session-end p {
+  color: var(--text-dim);
+  margin-bottom: 26px;
+  font-size: 14px;
+}
+.session-end button {
+  padding: 11px 32px;
+  border-radius: 22px;
+  background: rgba(255,255,255,0.08);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+</style>
+</head>
+<body>
+
+<main id="home">
+  <h1>RESPIRA</h1>
+  <div class="tagline">respiração consciente</div>
+
+  <div class="section-title">Padrão</div>
+  <div class="patterns" id="patterns-list"></div>
+
+  <div class="section-title">Duração</div>
+  <div class="row">
+    <span class="label">Minutos</span>
+    <div class="options" id="duration-opts">
+      <button class="option" data-min="3">3</button>
+      <button class="option active" data-min="5">5</button>
+      <button class="option" data-min="10">10</button>
+      <button class="option" data-min="15">15</button>
+      <button class="option" data-min="0">∞</button>
+    </div>
+  </div>
+
+  <div class="section-title">Som</div>
+  <div class="row">
+    <span class="label">Sino entre fases</span>
+    <div class="options" id="sound-opts">
+      <button class="option" data-sound="off">Off</button>
+      <button class="option active" data-sound="soft">Suave</button>
+    </div>
+  </div>
+</main>
+
+<main id="session">
+  <div class="session-top">
+    <span class="pattern-name" id="session-pattern-name"></span>
+    <span class="timer" id="session-timer"></span>
+  </div>
+  <div class="breathing-area">
+    <div class="circle-wrap">
+      <div class="circle-outer"></div>
+      <div class="circle" id="breathing-circle"></div>
+      <div class="circle-content">
+        <div class="instruction" id="instruction">Prepare</div>
+        <div class="counter" id="counter"></div>
+      </div>
+    </div>
+    <div class="tap-hint" id="tap-hint">toque para continuar</div>
+  </div>
+  <div class="session-bottom">
+    <div class="round-info" id="round-info"></div>
+    <button class="stop" id="stop-btn">Parar</button>
+  </div>
+</main>
+
+<div id="custom-modal">
+  <div class="modal-content">
+    <h2>Personalizar</h2>
+    <div class="custom-row">
+      <span>Inspirar</span>
+      <div class="stepper" data-key="inhale">
+        <button class="dec">−</button>
+        <span class="value">4</span>
+        <button class="inc">+</button>
+      </div>
+    </div>
+    <div class="custom-row">
+      <span>Pausa após inspirar</span>
+      <div class="stepper" data-key="hold1">
+        <button class="dec">−</button>
+        <span class="value">4</span>
+        <button class="inc">+</button>
+      </div>
+    </div>
+    <div class="custom-row">
+      <span>Expirar</span>
+      <div class="stepper" data-key="exhale">
+        <button class="dec">−</button>
+        <span class="value">4</span>
+        <button class="inc">+</button>
+      </div>
+    </div>
+    <div class="custom-row">
+      <span>Pausa após expirar</span>
+      <div class="stepper" data-key="hold2">
+        <button class="dec">−</button>
+        <span class="value">4</span>
+        <button class="inc">+</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="custom-cancel">Cancelar</button>
+      <button class="btn-confirm" id="custom-start">Começar</button>
+    </div>
+  </div>
+</div>
+
+<div class="session-end" id="session-end">
+  <h2>CONCLUÍDO</h2>
+  <p id="session-end-info"></p>
+  <button id="session-end-btn">Voltar</button>
+</div>
+
+<script>
+const PATTERNS = {
+  box: {
+    name: 'Box Breathing',
+    desc: 'Foco e equilíbrio',
+    pace: '4 · 4 · 4 · 4',
+    phases: [
+      { label: 'Inspire', dur: 4, scale: 1 },
+      { label: 'Segure', dur: 4, scale: 1 },
+      { label: 'Expire', dur: 4, scale: 0.42 },
+      { label: 'Segure', dur: 4, scale: 0.42 },
+    ],
+  },
+  r478: {
+    name: '4 - 7 - 8',
+    desc: 'Relaxar e dormir',
+    pace: '4 · 7 · 8',
+    phases: [
+      { label: 'Inspire', dur: 4, scale: 1 },
+      { label: 'Segure', dur: 7, scale: 1 },
+      { label: 'Expire', dur: 8, scale: 0.42 },
+    ],
+  },
+  coherent: {
+    name: 'Coerente',
+    desc: 'Equilíbrio do sistema nervoso',
+    pace: '5.5 · 5.5',
+    phases: [
+      { label: 'Inspire', dur: 5.5, scale: 1 },
+      { label: 'Expire', dur: 5.5, scale: 0.42 },
+    ],
+  },
+  wimhof: {
+    name: 'Wim Hof',
+    desc: '3 rodadas: 30 ciclos + retenção',
+    pace: '30× + retenção',
+    special: true,
+  },
+  custom: {
+    name: 'Personalizado',
+    desc: 'Você define os tempos',
+    pace: 'configurar',
+    custom: true,
+  },
+};
+
+const state = {
+  pattern: 'box',
+  duration: 5,
+  sound: 'soft',
+  custom: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
+  active: false,
+  startTime: 0,
+  endTime: 0,
+  phaseTimer: null,
+  tickTimer: null,
+  counterIv: null,
+  wakeLock: null,
+};
+
+const STORAGE_KEY = 'respira-prefs-v1';
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    if (p.duration !== undefined) state.duration = p.duration;
+    if (p.sound) state.sound = p.sound;
+    if (p.custom) state.custom = { ...state.custom, ...p.custom };
+  } catch {}
+}
+function savePrefs() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    duration: state.duration,
+    sound: state.sound,
+    custom: state.custom,
+  }));
+}
+
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) audioCtx = new Ctx();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function playBell(freq = 528, vol = 0.22) {
+  if (state.sound === 'off') return;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const harmonics = [
+    { f: 1, a: vol, d: 2.6 },
+    { f: 2.0, a: vol * 0.5, d: 1.6 },
+    { f: 3.01, a: vol * 0.22, d: 1.0 },
+  ];
+  harmonics.forEach(h => {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq * h.f;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(h.a, now + 0.018);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + h.d);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + h.d + 0.05);
+  });
+}
+function playEndBell() {
+  playBell(396, 0.28);
+  setTimeout(() => playBell(528, 0.22), 380);
+}
+
+function renderPatterns() {
+  const list = document.getElementById('patterns-list');
+  list.innerHTML = '';
+  Object.entries(PATTERNS).forEach(([key, p]) => {
+    const btn = document.createElement('button');
+    btn.className = 'pattern';
+    btn.innerHTML = `
+      <div>
+        <div class="name">${p.name}</div>
+        <div class="desc">${p.desc}</div>
+      </div>
+      <div class="pace">${p.pace}</div>
+    `;
+    btn.addEventListener('click', () => onPatternClick(key));
+    list.appendChild(btn);
+  });
+}
+function onPatternClick(key) {
+  state.pattern = key;
+  ensureAudio();
+  if (PATTERNS[key].custom) showCustomModal();
+  else startSession();
+}
+
+function setupOpts(selector, key, parse) {
+  const opts = document.querySelectorAll(selector + ' .option');
+  opts.forEach(b => {
+    const v = parse(b);
+    if (v === state[key]) b.classList.add('active'); else b.classList.remove('active');
+    b.addEventListener('click', () => {
+      state[key] = v;
+      opts.forEach(x => x.classList.toggle('active', x === b));
+      savePrefs();
+    });
+  });
+}
+
+function showCustomModal() {
+  const modal = document.getElementById('custom-modal');
+  ['inhale','hold1','exhale','hold2'].forEach(k => {
+    modal.querySelector(`.stepper[data-key="${k}"] .value`).textContent = state.custom[k];
+  });
+  modal.classList.add('visible');
+}
+function hideCustomModal() {
+  document.getElementById('custom-modal').classList.remove('visible');
+}
+function setupCustomModal() {
+  const modal = document.getElementById('custom-modal');
+  modal.querySelectorAll('.stepper').forEach(s => {
+    const key = s.dataset.key;
+    const val = s.querySelector('.value');
+    s.querySelector('.dec').addEventListener('click', () => {
+      const min = (key === 'inhale' || key === 'exhale') ? 1 : 0;
+      if (state.custom[key] > min) {
+        state.custom[key]--;
+        val.textContent = state.custom[key];
+        savePrefs();
+      }
+    });
+    s.querySelector('.inc').addEventListener('click', () => {
+      if (state.custom[key] < 20) {
+        state.custom[key]++;
+        val.textContent = state.custom[key];
+        savePrefs();
+      }
+    });
+  });
+  document.getElementById('custom-cancel').addEventListener('click', hideCustomModal);
+  document.getElementById('custom-start').addEventListener('click', () => {
+    hideCustomModal();
+    startSession();
+  });
+}
+
+function getPhases(key) {
+  if (key === 'custom') {
+    const c = state.custom;
+    const phases = [{ label: 'Inspire', dur: c.inhale, scale: 1 }];
+    if (c.hold1 > 0) phases.push({ label: 'Segure', dur: c.hold1, scale: 1 });
+    phases.push({ label: 'Expire', dur: c.exhale, scale: 0.42 });
+    if (c.hold2 > 0) phases.push({ label: 'Segure', dur: c.hold2, scale: 0.42 });
+    return phases;
+  }
+  return PATTERNS[key].phases;
+}
+function fmtTime(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2,'0')}`;
+}
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      state.wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch {}
+}
+function releaseWakeLock() {
+  if (state.wakeLock) {
+    state.wakeLock.release().catch(()=>{});
+    state.wakeLock = null;
+  }
+}
+
+function startSession() {
+  state.active = true;
+  document.getElementById('home').style.display = 'none';
+  document.getElementById('session').classList.add('active');
+  document.getElementById('session-pattern-name').textContent =
+    PATTERNS[state.pattern].name.toUpperCase();
+  document.getElementById('round-info').textContent = '';
+  ensureAudio();
+  requestWakeLock();
+
+  state.startTime = Date.now();
+  state.endTime = state.duration > 0 ? state.startTime + state.duration * 60_000 : 0;
+  state.tickTimer = setInterval(updateTimerDisplay, 250);
+  updateTimerDisplay();
+
+  if (state.pattern === 'wimhof') runWimHof();
+  else runStandard();
+}
+
+function updateTimerDisplay() {
+  const now = Date.now();
+  const el = document.getElementById('session-timer');
+  if (state.endTime > 0) {
+    const remaining = (state.endTime - now) / 1000;
+    el.textContent = fmtTime(remaining);
+    if (remaining <= 0 && state.pattern !== 'wimhof') finishSession();
+  } else {
+    el.textContent = fmtTime((now - state.startTime) / 1000);
+  }
+}
+
+function runStandard() {
+  const phases = getPhases(state.pattern);
+  let idx = 0;
+  function next() {
+    if (!state.active) return;
+    if (state.endTime > 0 && Date.now() >= state.endTime) { finishSession(); return; }
+    const phase = phases[idx % phases.length];
+    showPhase(phase);
+    if (phase.label === 'Inspire') playBell(528, 0.18);
+    state.phaseTimer = setTimeout(() => { idx++; next(); }, phase.dur * 1000);
+  }
+  next();
+}
+
+function showPhase(phase) {
+  const circle = document.getElementById('breathing-circle');
+  circle.style.transitionDuration = phase.dur + 's';
+  requestAnimationFrame(() => {
+    circle.style.transform = `scale(${phase.scale})`;
+  });
+  document.getElementById('instruction').textContent = phase.label;
+  const counter = document.getElementById('counter');
+  const start = Date.now();
+  const tick = () => {
+    if (!state.active) return;
+    const elapsed = (Date.now() - start) / 1000;
+    const remaining = Math.ceil(phase.dur - elapsed);
+    counter.textContent = remaining > 0 ? remaining : '';
+  };
+  tick();
+  clearInterval(state.counterIv);
+  state.counterIv = setInterval(tick, 200);
+}
+
+async function runWimHof() {
+  const ROUNDS = 3, BREATHS = 30, BREATH_IN = 1.5, BREATH_OUT = 1.5, RECOVERY = 15;
+  const circle = document.getElementById('breathing-circle');
+  const instruction = document.getElementById('instruction');
+  const counter = document.getElementById('counter');
+  const roundInfo = document.getElementById('round-info');
+  const tapHint = document.getElementById('tap-hint');
+
+  state.endTime = 0;
+  document.getElementById('session-timer').textContent = '';
+
+  for (let r = 1; r <= ROUNDS; r++) {
+    if (!state.active) return;
+    roundInfo.textContent = `RODADA ${r} DE ${ROUNDS}`;
+    for (let i = 0; i < BREATHS; i++) {
+      if (!state.active) return;
+      circle.style.transitionDuration = BREATH_IN + 's';
+      circle.style.transform = 'scale(1)';
+      instruction.textContent = 'Inspire';
+      counter.textContent = `${i+1}/${BREATHS}`;
+      await sleep(BREATH_IN * 1000);
+      if (!state.active) return;
+      circle.style.transitionDuration = BREATH_OUT + 's';
+      circle.style.transform = 'scale(0.5)';
+      instruction.textContent = 'Expire';
+      await sleep(BREATH_OUT * 1000);
+    }
+    if (!state.active) return;
+    circle.style.transitionDuration = '3s';
+    circle.style.transform = 'scale(0.32)';
+    instruction.textContent = 'Solte o ar';
+    counter.textContent = '';
+    playBell(440, 0.22);
+    await sleep(2500);
+    if (!state.active) return;
+
+    instruction.textContent = 'Segure';
+    counter.textContent = '0:00';
+    tapHint.classList.add('visible');
+    const retentionStart = Date.now();
+    const retentionIv = setInterval(() => {
+      counter.textContent = fmtTime((Date.now()-retentionStart)/1000);
+    }, 1000);
+    await waitForTap();
+    clearInterval(retentionIv);
+    tapHint.classList.remove('visible');
+    if (!state.active) return;
+
+    instruction.textContent = 'Inspire fundo';
+    counter.textContent = '';
+    circle.style.transitionDuration = '2s';
+    circle.style.transform = 'scale(1)';
+    playBell(528, 0.22);
+    await sleep(2200);
+    if (!state.active) return;
+
+    instruction.textContent = 'Segure';
+    let rem = RECOVERY;
+    counter.textContent = rem;
+    for (let s = 0; s < RECOVERY; s++) {
+      if (!state.active) return;
+      await sleep(1000);
+      rem--;
+      counter.textContent = rem > 0 ? rem : '';
+    }
+  }
+  if (state.active) finishSession();
+}
+
+function waitForTap() {
+  return new Promise(resolve => {
+    const session = document.getElementById('session');
+    function handler(e) {
+      if (e.target.closest('#stop-btn')) return;
+      session.removeEventListener('click', handler);
+      resolve();
+    }
+    session.addEventListener('click', handler);
+  });
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function finishSession() {
+  if (!state.active) return;
+  state.active = false;
+  clearTimeout(state.phaseTimer);
+  clearInterval(state.tickTimer);
+  clearInterval(state.counterIv);
+  releaseWakeLock();
+  playEndBell();
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  document.getElementById('session-end-info').textContent =
+    `${fmtTime(elapsed)} de respiração`;
+  document.getElementById('session-end').classList.add('visible');
+}
+
+function resetSessionUI() {
+  document.getElementById('session').classList.remove('active');
+  document.getElementById('home').style.display = 'flex';
+  const circle = document.getElementById('breathing-circle');
+  circle.style.transitionDuration = '0.5s';
+  circle.style.transform = 'scale(0.42)';
+  document.getElementById('round-info').textContent = '';
+  document.getElementById('counter').textContent = '';
+  document.getElementById('instruction').textContent = 'Prepare';
+  document.getElementById('tap-hint').classList.remove('visible');
+}
+function backFromEnd() {
+  document.getElementById('session-end').classList.remove('visible');
+  resetSessionUI();
+}
+function stopSession() {
+  if (!state.active) return;
+  state.active = false;
+  clearTimeout(state.phaseTimer);
+  clearInterval(state.tickTimer);
+  clearInterval(state.counterIv);
+  releaseWakeLock();
+  resetSessionUI();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadPrefs();
+  renderPatterns();
+  setupOpts('#duration-opts', 'duration', b => Number(b.dataset.min));
+  setupOpts('#sound-opts', 'sound', b => b.dataset.sound);
+  setupCustomModal();
+  document.getElementById('stop-btn').addEventListener('click', stopSession);
+  document.getElementById('session-end-btn').addEventListener('click', backFromEnd);
+  document.addEventListener('visibilitychange', () => {
+    if (state.active && document.visibilityState === 'visible') requestWakeLock();
+  });
+});
+</script>
+</body>
+</html>
