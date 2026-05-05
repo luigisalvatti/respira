@@ -111,6 +111,15 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   transition: all 0.15s;
 }
 .option.active { background: var(--accent); color: #fff; }
+.freq-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+  letter-spacing: 0.06em;
+  margin-top: 6px;
+  min-height: 14px;
+  font-style: italic;
+}
 
 /* SESSION */
 #session {
@@ -354,12 +363,23 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 
   <div class="section-title">Som</div>
   <div class="row">
-    <span class="label">Sino entre fases</span>
+    <span class="label">Sino</span>
     <div class="options" id="sound-opts">
       <button class="option" data-sound="off">Off</button>
       <button class="option active" data-sound="soft">Suave</button>
     </div>
   </div>
+  <div class="row">
+    <span class="label">Hz</span>
+    <div class="options" id="freq-opts">
+      <button class="option active" data-freq="0">Off</button>
+      <button class="option" data-freq="396">396</button>
+      <button class="option" data-freq="432">432</button>
+      <button class="option" data-freq="528">528</button>
+      <button class="option" data-freq="639">639</button>
+    </div>
+  </div>
+  <div class="freq-hint" id="freq-hint"></div>
 </main>
 
 <main id="session">
@@ -478,10 +498,19 @@ const PATTERNS = {
   },
 };
 
+const FREQ_HINTS = {
+  0: '',
+  396: 'libertação · medo e culpa',
+  432: 'sintonia natural · relaxamento',
+  528: 'transformação · cura',
+  639: 'conexão · coração',
+};
+
 const state = {
   pattern: 'box',
   duration: 5,
   sound: 'soft',
+  frequency: 0,
   custom: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
   active: false,
   startTime: 0,
@@ -490,6 +519,7 @@ const state = {
   tickTimer: null,
   counterIv: null,
   wakeLock: null,
+  drone: null,
 };
 
 const STORAGE_KEY = 'respira-prefs-v1';
@@ -498,6 +528,7 @@ function loadPrefs() {
     const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     if (p.duration !== undefined) state.duration = p.duration;
     if (p.sound) state.sound = p.sound;
+    if (p.frequency !== undefined) state.frequency = p.frequency;
     if (p.custom) state.custom = { ...state.custom, ...p.custom };
   } catch {}
 }
@@ -505,6 +536,7 @@ function savePrefs() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     duration: state.duration,
     sound: state.sound,
+    frequency: state.frequency,
     custom: state.custom,
   }));
 }
@@ -546,6 +578,72 @@ function playEndBell() {
   setTimeout(() => playBell(528, 0.22), 380);
 }
 
+function createDrone(freq) {
+  if (!freq || freq === 0) return null;
+  const ctx = ensureAudio();
+  if (!ctx) return null;
+  const now = ctx.currentTime;
+
+  const master = ctx.createGain();
+  master.gain.setValueAtTime(0, now);
+  master.gain.linearRampToValueAtTime(0.09, now + 4);
+  master.connect(ctx.destination);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = Math.max(freq * 4, 1800);
+  filter.Q.value = 0.5;
+  filter.connect(master);
+
+  const layers = [
+    { mult: 0.5, type: 'sine',     detune: 0,   gain: 0.55 },
+    { mult: 1,   type: 'sine',     detune: -8,  gain: 0.55 },
+    { mult: 1,   type: 'sine',     detune: 0,   gain: 0.65 },
+    { mult: 1,   type: 'sine',     detune: 8,   gain: 0.55 },
+    { mult: 2,   type: 'sine',     detune: 0,   gain: 0.16 },
+    { mult: 1.5, type: 'triangle', detune: 0,   gain: 0.08 },
+  ];
+
+  const nodes = [];
+  layers.forEach((l, i) => {
+    const osc = ctx.createOscillator();
+    osc.type = l.type;
+    osc.frequency.value = freq * l.mult;
+    osc.detune.value = l.detune;
+
+    const g = ctx.createGain();
+    g.gain.value = l.gain * 0.13;
+
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.05 + i * 0.025;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = l.gain * 0.04;
+    lfo.connect(lfoGain).connect(g.gain);
+
+    osc.connect(g).connect(filter);
+    osc.start(now);
+    lfo.start(now);
+    nodes.push(osc, lfo);
+  });
+
+  return { master, nodes };
+}
+
+function stopDrone(d) {
+  if (!d) return;
+  const ctx = audioCtx;
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  d.master.gain.cancelScheduledValues(now);
+  d.master.gain.setValueAtTime(d.master.gain.value, now);
+  d.master.gain.linearRampToValueAtTime(0, now + 2);
+  setTimeout(() => {
+    d.nodes.forEach(n => { try { n.stop(); } catch {} });
+    try { d.master.disconnect(); } catch {}
+  }, 2200);
+}
+
 function renderPatterns() {
   const list = document.getElementById('patterns-list');
   list.innerHTML = '';
@@ -570,7 +668,7 @@ function onPatternClick(key) {
   else startSession();
 }
 
-function setupOpts(selector, key, parse) {
+function setupOpts(selector, key, parse, onChange) {
   const opts = document.querySelectorAll(selector + ' .option');
   opts.forEach(b => {
     const v = parse(b);
@@ -579,8 +677,14 @@ function setupOpts(selector, key, parse) {
       state[key] = v;
       opts.forEach(x => x.classList.toggle('active', x === b));
       savePrefs();
+      if (onChange) onChange(v);
     });
   });
+}
+
+function updateFreqHint() {
+  const hint = document.getElementById('freq-hint');
+  if (hint) hint.textContent = FREQ_HINTS[state.frequency] || '';
 }
 
 function showCustomModal() {
@@ -661,6 +765,7 @@ function startSession() {
   document.getElementById('round-info').textContent = '';
   ensureAudio();
   requestWakeLock();
+  if (state.frequency > 0) state.drone = createDrone(state.frequency);
 
   state.startTime = Date.now();
   state.endTime = state.duration > 0 ? state.startTime + state.duration * 60_000 : 0;
@@ -806,6 +911,7 @@ function finishSession() {
   clearInterval(state.tickTimer);
   clearInterval(state.counterIv);
   releaseWakeLock();
+  stopDrone(state.drone); state.drone = null;
   playEndBell();
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
   document.getElementById('session-end-info').textContent =
@@ -835,6 +941,7 @@ function stopSession() {
   clearInterval(state.tickTimer);
   clearInterval(state.counterIv);
   releaseWakeLock();
+  stopDrone(state.drone); state.drone = null;
   resetSessionUI();
 }
 
@@ -843,6 +950,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderPatterns();
   setupOpts('#duration-opts', 'duration', b => Number(b.dataset.min));
   setupOpts('#sound-opts', 'sound', b => b.dataset.sound);
+  setupOpts('#freq-opts', 'frequency', b => Number(b.dataset.freq), updateFreqHint);
+  updateFreqHint();
   setupCustomModal();
   document.getElementById('stop-btn').addEventListener('click', stopSession);
   document.getElementById('session-end-btn').addEventListener('click', backFromEnd);
