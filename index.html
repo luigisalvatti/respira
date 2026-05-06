@@ -367,7 +367,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
     <div class="options" id="guide-opts">
       <button class="option" data-guide="off">Off</button>
       <button class="option" data-guide="sino">Sino</button>
-      <button class="option active" data-guide="voz">Voz</button>
+      <button class="option active" data-guide="tom">Tom</button>
     </div>
   </div>
   <div class="row">
@@ -518,7 +518,7 @@ const FREQ_HINTS = {
 const state = {
   pattern: 'box',
   duration: 5,
-  guide: 'voz',       // 'off' | 'sino' | 'voz'
+  guide: 'tom',       // 'off' | 'sino' | 'tom'
   frequency: 0,
   volume: 1.8,        // 0.5 (baixo) | 1 (medio) | 1.8 (alto)
   custom: { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
@@ -530,6 +530,7 @@ const state = {
   counterIv: null,
   wakeLock: null,
   drone: null,
+  breathTone: null,
 };
 
 const STORAGE_KEY = 'respira-prefs-v1';
@@ -537,8 +538,9 @@ function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
     if (p.duration !== undefined) state.duration = p.duration;
-    if (p.guide) state.guide = p.guide;
-    else if (p.sound === 'off') state.guide = 'off'; // migrate old prefs
+    if (p.guide === 'voz') state.guide = 'tom'; // migrate from removed 'voz'
+    else if (p.guide) state.guide = p.guide;
+    else if (p.sound === 'off') state.guide = 'off';
     else if (p.sound === 'soft') state.guide = 'sino';
     if (p.frequency !== undefined) state.frequency = p.frequency;
     if (p.volume !== undefined) state.volume = p.volume;
@@ -609,7 +611,6 @@ function ensureAudio() {
       silentLoopEl.play().catch(() => {});
     } catch {}
     audioUnlocked = true;
-    primeSpeech();
   }
   return audioCtx;
 }
@@ -641,39 +642,74 @@ function playEndBell() {
   setTimeout(() => playBell(528, 0.32), 380);
 }
 
-// Voice guidance — iOS Web Speech API
-let _ptVoice = null;
-function primeSpeech() {
-  if (!('speechSynthesis' in window)) return;
-  try {
-    speechSynthesis.getVoices();
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0;
-    u.lang = 'pt-BR';
-    speechSynthesis.speak(u);
-  } catch {}
+// Tonal guide — pitch glides up on inhale, down on exhale, holds during pauses
+function createBreathTone() {
+  const ctx = ensureAudio();
+  if (!ctx) return null;
+  const base = state.frequency > 0 ? state.frequency : 220;
+  const now = ctx.currentTime;
+
+  const osc1 = ctx.createOscillator();
+  osc1.type = 'sine';
+  osc1.frequency.setValueAtTime(base, now);
+
+  const osc2 = ctx.createOscillator();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(base, now);
+  osc2.detune.value = 6;
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = base * 5;
+  filter.Q.value = 0.4;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.18 * state.volume, now + 1.2);
+
+  osc1.connect(filter);
+  osc2.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc1.start(now);
+  osc2.start(now);
+  return { osc1, osc2, gain, base };
 }
-function pickPtVoice() {
-  if (!('speechSynthesis' in window)) return null;
-  const voices = speechSynthesis.getVoices();
-  return voices.find(v => v.lang === 'pt-BR' && /Luciana|Joana|Felipe/i.test(v.name)) ||
-         voices.find(v => v.lang === 'pt-BR') ||
-         voices.find(v => v.lang.startsWith('pt')) || null;
+
+function modulateBreathTone(tone, phase) {
+  if (!tone) return;
+  const ctx = audioCtx;
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const dur = phase.dur;
+  const peak = tone.base * 1.5; // perfect fifth up at peak inhale
+
+  let target;
+  if (phase.label === 'Inspire') target = peak;
+  else if (phase.label === 'Expire') target = tone.base;
+  else return; // Segure: hold current frequency
+
+  [tone.osc1, tone.osc2].forEach(o => {
+    o.frequency.cancelScheduledValues(now);
+    o.frequency.setValueAtTime(o.frequency.value, now);
+    o.frequency.linearRampToValueAtTime(target, now + dur);
+  });
 }
-function speak(text) {
-  if (!('speechSynthesis' in window)) return;
-  if (state.guide !== 'voz') return;
-  try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'pt-BR';
-    u.rate = 0.92;
-    u.pitch = 1;
-    u.volume = Math.min(1, 0.85 * state.volume);
-    if (!_ptVoice) _ptVoice = pickPtVoice();
-    if (_ptVoice) u.voice = _ptVoice;
-    speechSynthesis.speak(u);
-  } catch {}
+
+function stopBreathTone(tone) {
+  if (!tone) return;
+  const ctx = audioCtx;
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  tone.gain.gain.cancelScheduledValues(now);
+  tone.gain.gain.setValueAtTime(tone.gain.gain.value, now);
+  tone.gain.gain.linearRampToValueAtTime(0, now + 0.6);
+  setTimeout(() => {
+    try { tone.osc1.stop(); } catch {}
+    try { tone.osc2.stop(); } catch {}
+    try { tone.gain.disconnect(); } catch {}
+  }, 700);
 }
 
 function createDrone(freq) {
@@ -864,6 +900,7 @@ function startSession() {
   ensureAudio();
   requestWakeLock();
   if (state.frequency > 0) state.drone = createDrone(state.frequency);
+  if (state.guide === 'tom' && state.pattern !== 'wimhof') state.breathTone = createBreathTone();
 
   state.startTime = Date.now();
   state.endTime = state.duration > 0 ? state.startTime + state.duration * 60_000 : 0;
@@ -895,7 +932,7 @@ function runStandard() {
     const phase = phases[idx % phases.length];
     showPhase(phase);
     if (state.guide === 'sino' && phase.label === 'Inspire') playBell(528, 0.28);
-    if (state.guide === 'voz') speak(phase.label);
+    if (state.guide === 'tom') modulateBreathTone(state.breathTone, phase);
     state.phaseTimer = setTimeout(() => { idx++; next(); }, phase.dur * 1000);
   }
   next();
@@ -935,7 +972,6 @@ async function runWimHof() {
   for (let r = 1; r <= ROUNDS; r++) {
     if (!state.active) return;
     roundInfo.textContent = `RODADA ${r} DE ${ROUNDS}`;
-    if (state.guide === 'voz') speak(`Rodada ${r}`);
     for (let i = 0; i < BREATHS; i++) {
       if (!state.active) return;
       circle.style.transitionDuration = BREATH_IN + 's';
@@ -954,14 +990,12 @@ async function runWimHof() {
     circle.style.transform = 'scale(0.32)';
     instruction.textContent = 'Solte o ar';
     counter.textContent = '';
-    if (state.guide === 'sino') playBell(440, 0.32);
-    if (state.guide === 'voz') speak('Solte o ar');
+    if (state.guide !== 'off') playBell(440, 0.32);
     await sleep(2500);
     if (!state.active) return;
 
     instruction.textContent = 'Segure';
     counter.textContent = '0:00';
-    if (state.guide === 'voz') speak('Segure');
     tapHint.classList.add('visible');
     const retentionStart = Date.now();
     const retentionIv = setInterval(() => {
@@ -976,13 +1010,11 @@ async function runWimHof() {
     counter.textContent = '';
     circle.style.transitionDuration = '2s';
     circle.style.transform = 'scale(1)';
-    if (state.guide === 'sino') playBell(528, 0.32);
-    if (state.guide === 'voz') speak('Inspire fundo');
+    if (state.guide !== 'off') playBell(528, 0.32);
     await sleep(2200);
     if (!state.active) return;
 
     instruction.textContent = 'Segure';
-    if (state.guide === 'voz') speak('Segure quinze segundos');
     let rem = RECOVERY;
     counter.textContent = rem;
     for (let s = 0; s < RECOVERY; s++) {
@@ -1016,7 +1048,7 @@ function finishSession() {
   clearInterval(state.counterIv);
   releaseWakeLock();
   stopDrone(state.drone); state.drone = null;
-  try { speechSynthesis.cancel(); } catch {}
+  stopBreathTone(state.breathTone); state.breathTone = null;
   playEndBell();
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
   document.getElementById('session-end-info').textContent =
@@ -1047,7 +1079,7 @@ function stopSession() {
   clearInterval(state.counterIv);
   releaseWakeLock();
   stopDrone(state.drone); state.drone = null;
-  try { speechSynthesis.cancel(); } catch {}
+  stopBreathTone(state.breathTone); state.breathTone = null;
   resetSessionUI();
 }
 
@@ -1059,10 +1091,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupOpts('#freq-opts', 'frequency', b => Number(b.dataset.freq), updateFreqHint);
   setupOpts('#vol-opts', 'volume', b => Number(b.dataset.vol));
   updateFreqHint();
-  if ('speechSynthesis' in window) {
-    speechSynthesis.addEventListener?.('voiceschanged', () => { _ptVoice = pickPtVoice(); });
-    pickPtVoice();
-  }
   setupCustomModal();
   document.getElementById('stop-btn').addEventListener('click', stopSession);
   document.getElementById('session-end-btn').addEventListener('click', backFromEnd);
