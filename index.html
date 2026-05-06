@@ -542,12 +542,60 @@ function savePrefs() {
 }
 
 let audioCtx = null;
+let audioUnlocked = false;
+let silentLoopEl = null;
+
+function generateSilentWAV() {
+  const sr = 8000, secs = 0.5, n = Math.floor(sr * secs);
+  const buf = new ArrayBuffer(44 + n * 2);
+  const v = new DataView(buf);
+  v.setUint32(0, 0x52494646, false);
+  v.setUint32(4, 36 + n * 2, true);
+  v.setUint32(8, 0x57415645, false);
+  v.setUint32(12, 0x666d7420, false);
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  v.setUint32(36, 0x64617461, false);
+  v.setUint32(40, n * 2, true);
+  let bin = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return 'data:audio/wav;base64,' + btoa(bin);
+}
+
 function ensureAudio() {
   if (!audioCtx) {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (Ctx) audioCtx = new Ctx();
   }
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+  if (!audioUnlocked && audioCtx) {
+    // Web Audio unlock via tiny silent buffer
+    try {
+      const b = audioCtx.createBuffer(1, 1, 22050);
+      const s = audioCtx.createBufferSource();
+      s.buffer = b;
+      s.connect(audioCtx.destination);
+      s.start(0);
+    } catch {}
+    // HTMLAudio loop unlock — bypasses iOS silent-switch quirks for PWAs
+    try {
+      silentLoopEl = document.createElement('audio');
+      silentLoopEl.setAttribute('playsinline', '');
+      silentLoopEl.setAttribute('webkit-playsinline', '');
+      silentLoopEl.loop = true;
+      silentLoopEl.volume = 0.001;
+      silentLoopEl.src = generateSilentWAV();
+      silentLoopEl.play().catch(() => {});
+    } catch {}
+    audioUnlocked = true;
+  }
   return audioCtx;
 }
 function playBell(freq = 528, vol = 0.22) {
