@@ -609,7 +609,7 @@ function ensureAudio() {
       silentLoopEl.play().catch(() => {});
     } catch {}
     audioUnlocked = true;
-    primeSpeech();
+    decodeVoices();
   }
   return audioCtx;
 }
@@ -641,38 +641,55 @@ function playEndBell() {
   setTimeout(() => playBell(528, 0.32), 380);
 }
 
-// Voice guidance
-let _ptVoice = null;
-function primeSpeech() {
-  if (!('speechSynthesis' in window)) return;
-  try {
-    speechSynthesis.getVoices();
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0;
-    u.lang = 'pt-BR';
-    speechSynthesis.speak(u);
-  } catch {}
+// Voice guidance — pre-recorded audio files (Shelley pt_BR via macOS `say`)
+const VOICE_FILES = {
+  'Inspire':                 'voice/inspire.m4a',
+  'Segure':                  'voice/segure.m4a',
+  'Expire':                  'voice/expire.m4a',
+  'Solte o ar':              'voice/solte.m4a',
+  'Inspire fundo':           'voice/inspire-fundo.m4a',
+  'Segure quinze segundos':  'voice/segure-15s.m4a',
+  'Rodada 1':                'voice/rodada-1.m4a',
+  'Rodada 2':                'voice/rodada-2.m4a',
+  'Rodada 3':                'voice/rodada-3.m4a',
+};
+const voiceBytes = {};
+const voiceBuffers = {};
+let _activeVoice = null;
+
+async function preloadVoiceBytes() {
+  await Promise.all(Object.entries(VOICE_FILES).map(async ([key, src]) => {
+    try {
+      const res = await fetch(src);
+      voiceBytes[key] = await res.arrayBuffer();
+    } catch {}
+  }));
 }
-function pickPtVoice() {
-  if (!('speechSynthesis' in window)) return null;
-  const voices = speechSynthesis.getVoices();
-  return voices.find(v => v.lang === 'pt-BR' && /Luciana|Joana|Felipe/i.test(v.name)) ||
-         voices.find(v => v.lang === 'pt-BR') ||
-         voices.find(v => v.lang.startsWith('pt')) || null;
+async function decodeVoices() {
+  const ctx = audioCtx;
+  if (!ctx) return;
+  await Promise.all(Object.entries(voiceBytes).map(async ([key, bytes]) => {
+    if (voiceBuffers[key]) return;
+    try {
+      voiceBuffers[key] = await ctx.decodeAudioData(bytes.slice(0));
+    } catch {}
+  }));
 }
 function speak(text) {
-  if (!('speechSynthesis' in window)) return;
   if (state.guide !== 'voz') return;
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const buf = voiceBuffers[text];
+  if (!buf) return;
   try {
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'pt-BR';
-    u.rate = 0.92;
-    u.pitch = 1;
-    u.volume = Math.min(1, 0.85 * state.volume);
-    if (!_ptVoice) _ptVoice = pickPtVoice();
-    if (_ptVoice) u.voice = _ptVoice;
-    speechSynthesis.speak(u);
+    if (_activeVoice) { try { _activeVoice.stop(); } catch {} }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const gain = ctx.createGain();
+    gain.gain.value = Math.min(2.5, state.volume * 1.1);
+    src.connect(gain).connect(ctx.destination);
+    src.start();
+    _activeVoice = src;
   } catch {}
 }
 
@@ -1016,7 +1033,7 @@ function finishSession() {
   clearInterval(state.counterIv);
   releaseWakeLock();
   stopDrone(state.drone); state.drone = null;
-  try { speechSynthesis.cancel(); } catch {}
+  if (_activeVoice) { try { _activeVoice.stop(); } catch {} _activeVoice = null; }
   playEndBell();
   const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
   document.getElementById('session-end-info').textContent =
@@ -1047,7 +1064,7 @@ function stopSession() {
   clearInterval(state.counterIv);
   releaseWakeLock();
   stopDrone(state.drone); state.drone = null;
-  try { speechSynthesis.cancel(); } catch {}
+  if (_activeVoice) { try { _activeVoice.stop(); } catch {} _activeVoice = null; }
   resetSessionUI();
 }
 
@@ -1059,10 +1076,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupOpts('#freq-opts', 'frequency', b => Number(b.dataset.freq), updateFreqHint);
   setupOpts('#vol-opts', 'volume', b => Number(b.dataset.vol));
   updateFreqHint();
-  if ('speechSynthesis' in window) {
-    speechSynthesis.addEventListener?.('voiceschanged', () => { _ptVoice = pickPtVoice(); });
-    pickPtVoice();
-  }
+  preloadVoiceBytes();
   setupCustomModal();
   document.getElementById('stop-btn').addEventListener('click', stopSession);
   document.getElementById('session-end-btn').addEventListener('click', backFromEnd);
